@@ -20,6 +20,8 @@ export const App = () => {
 			const msg = JSON.parse(raw.data) as MsgOut
 			if (msg.type === 'hosted') setGame(msg.game)
 			if (msg.type === 'joined') setGame(msg.game)
+			if (msg.type === 'player_disconnected') setGame(msg.game)
+			if (msg.type === 'duplicate_playername') alert('Duplicate player name!')
 		}
 	}, [])
 
@@ -53,7 +55,7 @@ const Lobby = ({ game }: { game: Game }) => {
 			<div>{game.id}</div>
 			{game.players.map((p) => (
 				<div key={p.name}>
-					{p.name} {p.connected}
+					{p.name} {String(p.connected)}
 				</div>
 			))}
 		</div>
