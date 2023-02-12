@@ -4,19 +4,63 @@ import * as net from 'net'
 import * as path from 'path'
 import * as WebSocket from 'ws'
 
+export interface Game {
+	id: string
+	hostConId: string
+	players: Player[]
+}
+
+export interface Player {
+	name: string
+	connected: boolean
+	conId: string
+}
+
+interface ExtWebSocket extends WebSocket {
+	id: string
+}
+
 const app = express()
 const server = http.createServer(app)
 const ws = new WebSocket.Server({ server })
 
-let count = 0
+const games: Game[] = []
 
-ws.on('connection', (con: WebSocket) => {
-	con.on('message', (msg) => {
+export type MsgIn = { type: 'host' } | { type: 'join'; gameId: string; playerName: string }
+export type MsgOut = { type: 'hosted'; game: Game } | { type: 'joined'; game: Game } | { type: 'game_not_found' }
+
+const { parse, stringify } = JSON
+
+ws.on('connection', (con: ExtWebSocket) => {
+	const conId = String(Math.random())
+	con.id = conId
+
+	con.on('message', (raw) => {
+		const msg = parse(raw.toString()) as MsgIn
+
 		console.log('received: %s', msg)
-		count = Number(msg)
-		ws.clients.forEach((c) => c.send(count))
+
+		if (msg.type === 'host') {
+			const game: Game = { id: String(Math.floor(Math.random() * 1000)), hostConId: conId, players: [] }
+			games.push(game)
+			con.send(stringify({ type: 'hosted', game } satisfies MsgOut))
+		}
+
+		if (msg.type === 'join') {
+			const game = games.find((game) => game.id === msg.gameId)
+			if (game) {
+				game.players.push({ connected: true, name: msg.playerName, conId })
+				ws.clients.forEach((c) => {
+					const client = c as ExtWebSocket
+					if (client.id === game.hostConId || game.players.map((p) => p.conId).includes(client.id)) {
+						client.send(stringify({ type: 'joined', game } satisfies MsgOut))
+					}
+				})
+			} else {
+				con.send(stringify({ type: 'game_not_found' } satisfies MsgOut))
+			}
+		}
 	})
-	con.send(count)
 })
 
 app.use(express.static(path.join(__dirname, '../front/dist')))

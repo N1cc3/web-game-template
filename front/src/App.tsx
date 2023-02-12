@@ -2,20 +2,29 @@ import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
+import { Game } from '../../src/server'
+import { MsgIn, MsgOut } from '../../src/server'
 
 const url = import.meta.env.DEV ? 'ws://localhost:3000/' : `ws://${window.location.host}`
 const ws = new WebSocket(url)
 
 export const App = () => {
-	const [count, setCount] = useState(0)
+	const [game, setGame] = useState<Game>()
+	const [id, setId] = useState<string>('')
+	const [playerName, setPlayerName] = useState<string>('')
 
 	useEffect(() => {
 		ws.onopen = () => console.log('connected')
-		ws.onmessage = (msg) => setCount(Number(msg.data))
 		ws.onclose = () => console.log('disconnected')
+		ws.onmessage = (raw) => {
+			const msg = JSON.parse(raw.data) as MsgOut
+			if (msg.type === 'hosted') setGame(msg.game)
+			if (msg.type === 'joined') setGame(msg.game)
+		}
 	}, [])
 
-	const onCountClick = () => ws.send(String(count + 1))
+	const onHost = () => ws.send(JSON.stringify({ type: 'host' } satisfies MsgIn))
+	const onJoin = () => ws.send(JSON.stringify({ type: 'join', gameId: id, playerName } satisfies MsgIn))
 
 	return (
 		<div className="app">
@@ -28,9 +37,25 @@ export const App = () => {
 				</a>
 			</div>
 			<h1>Vite + React</h1>
-			<div className="card">
-				<button onClick={onCountClick}>count is {count}</button>
-			</div>
+			<button onClick={onHost}>Host</button>
+			<br />
+			<input placeholder="game id" onChange={(e) => setId(e.target.value)} />
+			<input placeholder="player name" onChange={(e) => setPlayerName(e.target.value)} />
+			<button onClick={onJoin}>Join</button>
+			{game && <Lobby game={game} />}
+		</div>
+	)
+}
+
+const Lobby = ({ game }: { game: Game }) => {
+	return (
+		<div>
+			<div>{game.id}</div>
+			{game.players.map((p) => (
+				<div key={p.name}>
+					{p.name} {p.connected}
+				</div>
+			))}
 		</div>
 	)
 }
