@@ -2,16 +2,21 @@ import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
-import { Game } from '../../src/server'
+import { ServerGame } from '../../src/server'
 import { MsgIn, MsgOut } from '../../src/server'
+import { GameMsgIn, GameMsgOut } from '../../src/game'
 
 const url = import.meta.env.DEV ? 'ws://localhost:3000/' : `ws://${window.location.host}`
 const ws = new WebSocket(url)
 
+type Chat = { name: string; msg: string }[]
+
 export const App = () => {
-	const [game, setGame] = useState<Game>()
+	const [game, setGame] = useState<ServerGame>()
 	const [id, setId] = useState<string>('')
 	const [playerName, setPlayerName] = useState<string>('')
+	const [chat, setChat] = useState<Chat>([])
+	const [isPlayer, setIsPlayer] = useState(false)
 
 	useEffect(() => {
 		ws.onopen = () => console.log('connected')
@@ -19,14 +24,23 @@ export const App = () => {
 		ws.onmessage = (raw) => {
 			const msg = JSON.parse(raw.data) as MsgOut
 			if (msg.type === 'hosted') setGame(msg.game)
-			if (msg.type === 'joined') setGame(msg.game)
+			if (msg.type === 'joined') {
+				setGame(msg.game)
+				setIsPlayer(true)
+			}
 			if (msg.type === 'player_disconnected') setGame(msg.game)
 			if (msg.type === 'duplicate_playername') alert('Duplicate player name!')
+
+			const gameMsg = msg as unknown as GameMsgOut
+			if (gameMsg.type === 'chat_msg') setChat((chat) => [...chat, { name: gameMsg.playerName, msg: gameMsg.msg }])
 		}
 	}, [])
 
 	const onHost = () => ws.send(JSON.stringify({ type: 'host' } satisfies MsgIn))
 	const onJoin = () => ws.send(JSON.stringify({ type: 'join', gameId: id, playerName } satisfies MsgIn))
+	const onSubmit = (chatMsg: string) => {
+		ws.send(JSON.stringify({ type: 'public_msg', msg: chatMsg } satisfies GameMsgIn))
+	}
 
 	return (
 		<div className="app">
@@ -44,18 +58,46 @@ export const App = () => {
 			<input placeholder="game id" onChange={(e) => setId(e.target.value)} />
 			<input placeholder="player name" onChange={(e) => setPlayerName(e.target.value)} />
 			<button onClick={onJoin}>Join</button>
-			{game && <Lobby game={game} />}
+			{game && <Lobby game={game} isPlayer={isPlayer} onSubmit={onSubmit} chat={chat} />}
 		</div>
 	)
 }
 
-const Lobby = ({ game }: { game: Game }) => {
+const Lobby = ({
+	game,
+	isPlayer,
+	onSubmit,
+	chat,
+}: {
+	game: ServerGame
+	isPlayer: boolean
+	onSubmit: (msg: string) => void
+	chat: Chat
+}) => {
 	return (
 		<div>
 			<div>{game.id}</div>
 			{game.players.map((p) => (
 				<div key={p.name}>
 					{p.name} {String(p.connected)}
+				</div>
+			))}
+			<br />
+			{isPlayer && (
+				<input
+					placeholder="chat message"
+					onKeyDown={(ev) => {
+						if (ev.code === 'Enter') {
+							onSubmit(ev.currentTarget.value)
+							ev.currentTarget.value = ''
+						}
+					}}
+				/>
+			)}
+
+			{chat.map((msg) => (
+				<div key={`${msg.name}-${msg.msg}`}>
+					{msg.name}: {msg.msg}
 				</div>
 			))}
 		</div>

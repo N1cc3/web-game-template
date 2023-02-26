@@ -3,8 +3,8 @@
 	"version": "1.0.0",
 	"description": "Template for making a multiplayer browser game",
 	"scripts": {
-		"start": "nodemon ./src/server.ts",
-		"production": "NODE_ENV=production ts-node ./src/server.ts"
+		"start": "nodemon ./src/game.ts",
+		"production": "NODE_ENV=production ts-node ./src/game.ts"
 	},
 	"repository": {
 		"type": "git",
