@@ -4,20 +4,21 @@ import * as net from 'net'
 import * as path from 'path'
 import * as WebSocket from 'ws'
 
-export interface ServerGame {
+export interface HostedGame {
 	id: string
 	hostConId: string
-	players: ServerPlayer[]
+	players: Player[]
 }
 
-interface ServerPlayer {
+export interface Player {
 	name: string
 	connected: boolean
 	conId: string
 }
 
-interface Game<GameMsgOut> extends ServerGame {
+interface Game<GameMsgOut> extends HostedGame {
 	broadcast: (msg: GameMsgOut) => void
+	send: (from: string, to: string, msg: GameMsgOut) => void
 }
 
 interface ExtWebSocket extends WebSocket {
@@ -27,16 +28,16 @@ interface ExtWebSocket extends WebSocket {
 
 export type MsgIn = { type: 'host' } | { type: 'join'; gameId: string; playerName: string }
 export type MsgOut =
-	| { type: 'hosted'; game: ServerGame }
-	| { type: 'joined'; game: ServerGame }
+	| { type: 'hosted'; game: HostedGame }
+	| { type: 'joined'; game: HostedGame; playerName: string }
 	| { type: 'game_not_found' }
-	| { type: 'player_disconnected'; game: ServerGame }
+	| { type: 'player_disconnected'; game: HostedGame }
 	| { type: 'duplicate_playername' }
 
 interface Callbacks<GameMsgIn, GameMsgOut> {
 	onHost: (game: Game<GameMsgOut>) => void
-	onGameMsg: (game: Game<GameMsgOut>, player: ServerPlayer, msg: GameMsgIn) => void
-	onJoin: (game: Game<GameMsgOut>, player: ServerPlayer, isRejoin: boolean) => void
+	onGameMsg: (game: Game<GameMsgOut>, player: Player, msg: GameMsgIn) => void
+	onJoin: (game: Game<GameMsgOut>, player: Player, isRejoin: boolean) => void
 }
 
 export const createServer = <GameMsgIn, GameMsgOut>({
@@ -48,12 +49,21 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 	const server = http.createServer(app)
 	const ws = new WebSocket.Server({ server })
 
-	const broadcast = (game: ServerGame, msg: MsgOut | GameMsgOut) => {
+	const broadcast = (game: HostedGame, msg: MsgOut | GameMsgOut) => {
 		ws.clients.forEach((c) => {
 			const client = c as ExtWebSocket
 			if (client.id === game.hostConId || game.players.map((p) => p.conId).includes(client.id)) {
 				client.send(stringify(msg))
 			}
+		})
+	}
+
+	const sendTo = (game: HostedGame, fromName: string, toName: string, msg: MsgOut | GameMsgOut) => {
+		const from = game.players.find((p) => p.name === fromName)
+		const to = game.players.find((p) => p.name === toName)
+		ws.clients.forEach((c) => {
+			const client = c as ExtWebSocket
+			if (client.id === to?.conId || client.id === from?.conId) client.send(stringify(msg))
 		})
 	}
 
@@ -76,6 +86,7 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 					hostConId: conId,
 					players: [],
 					broadcast: (msg) => broadcast(game, msg),
+					send: (from, to, msg) => sendTo(game, from, to, msg),
 				}
 				con.gameId = game.id
 				games.push(game)
@@ -96,7 +107,7 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 					const newPlayer = { connected: true, name: msg.playerName, conId }
 					con.gameId = game.id
 					game.players.push(newPlayer)
-					broadcast(game, { type: 'joined', game })
+					broadcast(game, { type: 'joined', game, playerName: newPlayer.name })
 					return
 				}
 
@@ -106,7 +117,7 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 					player.connected = true
 					player.conId = conId
 					con.gameId = game.id
-					broadcast(game, { type: 'joined', game })
+					broadcast(game, { type: 'joined', game, playerName: player.name })
 				}
 				return
 			}
