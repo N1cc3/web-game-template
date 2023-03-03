@@ -17,7 +17,15 @@ export interface Player {
 }
 
 interface Game<GameMsgOut> extends HostedGame {
+	/** Sends message to all clients.
+	 * @param msg Serializeable public message
+	 */
 	broadcast: (msg: GameMsgOut) => void
+	/** Sends message to a specic player.
+	 * @param from Player name of sender
+	 * @param to Player name of reciever
+	 * @param msg Serializeable private message
+	 */
 	send: (from: string, to: string, msg: GameMsgOut) => void
 }
 
@@ -26,7 +34,9 @@ interface ExtWebSocket extends WebSocket {
 	gameId?: string
 }
 
+/** Generic messages the server expects. Used for all games. Send these from the client */
 export type MsgIn = { type: 'host' } | { type: 'join'; gameId: string; playerName: string }
+/** Generic messages sent by the server. Used for all games. Listen to these on the client. */
 export type MsgOut =
 	| { type: 'hosted'; game: HostedGame }
 	| { type: 'joined'; game: HostedGame; playerName: string }
@@ -35,11 +45,31 @@ export type MsgOut =
 	| { type: 'duplicate_playername' }
 
 interface Callbacks<GameMsgIn, GameMsgOut> {
+	/** Called when a new game has been hosted. Use to create the initial game state.
+	 * @param game The newly created game.
+	 */
 	onHost: (game: Game<GameMsgOut>) => void
+	/** Called on every message the server recieves.
+	 * Check the message type, run your game logic and update the game state accordingly.
+	 * Remember to broadcast the new game state to the players.
+	 * @param game The game the message was sent in
+	 * @param player The player who sent the message
+	 * @param msg The message
+	 */
 	onGameMsg: (game: Game<GameMsgOut>, player: Player, msg: GameMsgIn) => void
+	/** Called when a player joins or rejoins the game.
+	 * Use to initialize player data and to send the current private player state.
+	 * @param game The game that was joined/rejoined
+	 * @param player The player who joined/rejoined
+	 * @param isRejoin Boolean whether this was a rejoin or not.
+	 */
 	onJoin: (game: Game<GameMsgOut>, player: Player, isRejoin: boolean) => void
 }
 
+/** Creates the websocket server. Provides game frontend from front/dist folder.
+ * Provide two type arguments: GameMsgIn and GameMsgOut.
+ * These are the types of messages your game server will want to recieve in and send out.
+ */
 export const createServer = <GameMsgIn, GameMsgOut>({
 	onHost,
 	onGameMsg,
@@ -107,6 +137,7 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 					const newPlayer = { connected: true, name: msg.playerName, conId }
 					con.gameId = game.id
 					game.players.push(newPlayer)
+					onJoin(game, newPlayer, false)
 					broadcast(game, { type: 'joined', game, playerName: newPlayer.name })
 					return
 				}
@@ -117,6 +148,7 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 					player.connected = true
 					player.conId = conId
 					con.gameId = game.id
+					onJoin(game, player, true)
 					broadcast(game, { type: 'joined', game, playerName: player.name })
 				}
 				return
@@ -143,6 +175,6 @@ export const createServer = <GameMsgIn, GameMsgOut>({
 	app.use(express.static(path.join(__dirname, '../front/dist')))
 
 	server.listen(process.env.PORT || 3000, () => {
-		console.log(`Server started on port ${(server.address() as net.AddressInfo)?.port} :)`)
+		console.log(`Server started on port ${(server.address() as net.AddressInfo)?.port}`)
 	})
 }
